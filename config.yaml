@@ -1,0 +1,20 @@
+data:
+  data_dir: "dataset/raw_data"
+  output_dir: "dataset/processed_data"
+  test_size: 0.3
+
+model:
+  input_shape: [256, 256, 3]
+  num_classes: 3
+
+training:
+  epochs: 50
+  patience: 5
+  test_size: 0.2
+
+oversampling:
+  target_class_size: 1000
+
+gan:
+  latent_dim: 100
+  epochs: 200
