@@ -1,6 +1,9 @@
-from base_dataset_manager import BaseDatasetManager
+# dataset_managers/class_weight_manager.py
+
+from dataset_managers.base_dataset_manager import BaseDatasetManager
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
+
 
 class DatasetManagerWithClassWeighting(BaseDatasetManager):
     def compute_class_weights(self):

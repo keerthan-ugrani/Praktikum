@@ -1,55 +1,122 @@
-import argparse
 import yaml
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from dataset_managers.gan_manager import DatasetManagerWithGANs
 from dataset_managers.oversampling_manager import DatasetManagerWithOversampling
 from dataset_managers.class_weight_manager import DatasetManagerWithClassWeighting
 from dataset_managers.focal_loss_manager import DatasetManagerWithFocalLoss
-from dataset_managers.gan_manager import DatasetManagerWithGANs
-from training.train import train_model
-from models.model import create_model
+from training.train import train_cnn
+import torch
 
-def load_config(config_file):
-    with open(config_file, 'r') as file:
+
+def load_config(config_path='config.yaml'):
+    with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
+
+def visualize_images(images, title, n=3):
+    """Utility function to visualize n images."""
+    plt.figure(figsize=(10, 5))
+    for i in range(n):
+        plt.subplot(1, n, i + 1)
+        plt.imshow(images[i], cmap='gray')
+        plt.axis('off')
+    plt.suptitle(title)
+    plt.show()
+
+
+def print_data_distribution(manager, stage="before"):
+    """Print number of images per class and total."""
+    print(f"\nData distribution {stage} resampling:")
+    print(f"Number of classes: {len(manager.data)}")
+    for class_name, images in manager.data.items():
+        print(f"Class '{class_name}': {len(images)} images")
+    print(f"Total images: {sum(len(images) for images in manager.data.values())}")
+
+
 def main():
-    # Argument Parsing
-    parser = argparse.ArgumentParser(description="Handle data imbalance methods and train models.")
-    parser.add_argument('--method', type=str, required=True, choices=['oversampling', 'class_weight', 'focal_loss', 'gan'],
-                        help="Select data imbalance handling method.")
-    parser.add_argument('--config', type=str, default='config.yaml', help="Path to the configuration file.")
-    args = parser.parse_args()
-
     # Load configuration
-    config = load_config(args.config)
-    data_dir = config['data']['data_dir']
-    
-    # Select the appropriate dataset manager
-    if args.method == 'oversampling':
-        dataset_manager = DatasetManagerWithOversampling(data_dir)
-    elif args.method == 'class_weight':
-        dataset_manager = DatasetManagerWithClassWeighting(data_dir)
-    elif args.method == 'focal_loss':
-        dataset_manager = DatasetManagerWithFocalLoss(data_dir)
-    elif args.method == 'gan':
-        dataset_manager = DatasetManagerWithGANs(data_dir)
+    config = load_config()
 
-    # Load and preprocess data
-    dataset_manager.load_data()
+    # Define the balancing methods to compare
+    methods = ['gan']
+    cnn_results = {}
 
-    # Prepare the dataset based on selected method
-    if args.method == 'oversampling':
-        dataset_manager.oversample_data(config['oversampling']['target_class_size'])
-    elif args.method == 'gan':
-        dataset_manager.train_gan(config['gan'])
+    # Directory for saving metadata and results
+    results_dir = 'results'
+    os.makedirs(results_dir, exist_ok=True)
 
-    # Split data into train/test sets
-    train_data, test_data = dataset_manager.split_data(test_size=config['training']['test_size'])
+    for method in methods:
+        print(f"\n\n========== Training CNN with {method} method ==========")
 
-    # Create model
-    model = create_model(config['model'])
+        # Get the appropriate dataset manager based on the method
+        if method == 'oversampling':
+            manager = DatasetManagerWithOversampling(config['data_dir'], config['target_image_size'])
+            manager.load_data()
+            print_data_distribution(manager, "before")
+            
+            # Apply oversampling
+            target_class_size = max(manager.metadata['class_counts'].values())
+            manager.oversample_data(target_class_size=target_class_size)
+            print_data_distribution(manager, "after")
+            manager.save_metadata_to_excel(f"{results_dir}/metadata_{method}.xlsx")
 
-    # Train and evaluate the model
-    train_model(model, train_data, test_data, config, dataset_manager)
+        elif method == 'class_weighted':
+            manager = DatasetManagerWithClassWeighting(config['data_dir'], config['target_image_size'])
+            manager.load_data()
+            print_data_distribution(manager, "before")
+            class_weights = manager.compute_class_weights()
+            manager.save_metadata_to_excel(f"{results_dir}/metadata_{method}.xlsx")
 
-if __name__ == '__main__':
+        elif method == 'focal_loss':
+            manager = DatasetManagerWithFocalLoss(config['data_dir'], config['target_image_size'])
+            manager.load_data()
+            print_data_distribution(manager, "before")
+            focal_loss_fn = manager.focal_loss()
+            manager.save_metadata_to_excel(f"{results_dir}/metadata_{method}.xlsx")
+
+        if method == 'gan':
+            # Choose GAN type based on config (standard or WGAN-GP)
+            gan_type = config.get('gan_type', 'standard')  # Default is 'standard'
+            
+            # Instantiate DatasetManagerWithGANs
+            manager = DatasetManagerWithGANs(config['data_dir'], config['target_image_size'], latent_dim=config['latent_dim'], gan_type=gan_type)
+            manager.load_data()
+
+            print_data_distribution(manager, "before")
+
+            # Augment the minority class using GANs
+            minority_class = manager.get_minority_class()
+            print(f"The minority class for GAN augmentation is: {minority_class}")
+            manager.train_gan(real_images=np.array(manager.data[minority_class]), epochs=config['gan_epochs'])
+
+            # Visualize a few images generated by GAN
+            noise = np.random.normal(0, 1, (3, manager.latent_dim))  # Generate 3 images for visualization
+            generated_images = manager.generator.predict(noise)
+            generated_images = (generated_images * 127.5 + 127.5).astype(np.uint8)  # Rescale to [0, 255]
+            visualize_images(generated_images, title=f"Generated Images ({gan_type.upper()})", n=3)
+
+            print_data_distribution(manager, "after")
+            manager.save_metadata_to_excel(f"{results_dir}/metadata_{method}.xlsx")
+
+        # Split the data
+        train_data, test_data = manager.split_data(test_size=config['test_size'])
+
+        if method == 'class_weighted':
+            class_weights_tensor = torch.tensor(list(class_weights.values()), dtype=torch.float32).to(
+                torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+            model, accuracy = train_cnn(train_data, test_data, config, class_weights=class_weights_tensor)
+        else:
+            model, accuracy = train_cnn(train_data, test_data, config)
+
+        cnn_results[method] = accuracy
+
+    # Display the results of each method for the CNN model
+    print("\n\n========== Comparison of Balancing Methods for CNN Model ==========")
+    for method, accuracy in cnn_results.items():
+        print(f"{method.capitalize()} Method Accuracy: {accuracy * 100:.2f}%")
+
+
+if __name__ == "__main__":
     main()

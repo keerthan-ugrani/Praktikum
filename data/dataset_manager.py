@@ -149,7 +149,7 @@ class DatasetManager:
 
 
 if __name__ == "__main__":
-    data_manager = DatasetManager('/TCGA-KIRP')
+    data_manager = DatasetManager('../dataset/TCGA-KIRP')
 
     # Load the data
     data_manager.load_data()

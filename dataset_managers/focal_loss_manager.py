@@ -1,6 +1,9 @@
-from base_dataset_manager import BaseDatasetManager
+# dataset_managers/focal_loss_manager.py
+
+from dataset_managers.base_dataset_manager import BaseDatasetManager
 import tensorflow as tf
-from tensorflow.keras import backend as K
+from keras import backend as K
+
 
 class DatasetManagerWithFocalLoss(BaseDatasetManager):
     def focal_loss(self, gamma=2., alpha=4.):

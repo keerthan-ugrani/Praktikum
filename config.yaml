@@ -1,20 +1,16 @@
-data:
-  data_dir: "dataset/raw_data"
-  output_dir: "dataset/processed_data"
-  test_size: 0.3
+# config.yaml
 
-model:
-  input_shape: [256, 256, 3]
-  num_classes: 3
-
-training:
-  epochs: 50
-  patience: 5
-  test_size: 0.2
-
-oversampling:
-  target_class_size: 1000
-
-gan:
-  latent_dim: 100
-  epochs: 200
+data_dir: "../dataset/TCGA-KIRP"
+#model_type: "few_shot"
+target_image_size: [28, 28] # Resize all images to 28x28 for simplicity
+input_shape: [1, 28, 28] # [channels, height, width]
+embedding_dim: 64
+num_epochs: 20
+batch_size: 32
+learning_rate: 0.001
+latent_dim: 100
+gan_type: "standard"
+test_size: 0.3
+n_support: 5 # Number of support samples per class
+n_query: 5 # Number of query samples per class
+gan_epochs: 1000 # Number of epochs to train the GAN
