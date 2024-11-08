@@ -68,9 +68,9 @@ class BaseDatasetManager:
         train_data = {}
         test_data = {}
         for class_name, files in self.data.items():
-            if len(files) < 2:
+            if len(files) < 20:
                 # If there's only 1 sample, add it all to the training set and skip splitting
-                print(f"Class '{class_name}' has less than 2 samples. Skipping split.")
+                print(f"Class '{class_name}' has less than 20 samples. Skipping split.")
                 train_data[class_name] = files
                 test_data[class_name] = []  # Empty test data
             else:

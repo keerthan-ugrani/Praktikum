@@ -9,8 +9,9 @@ num_epochs: 20
 batch_size: 32
 learning_rate: 0.001
 latent_dim: 100
-gan_type: "standard"
+gan_type: "wgan-gp"
 test_size: 0.3
 n_support: 5 # Number of support samples per class
 n_query: 5 # Number of query samples per class
 gan_epochs: 1000 # Number of epochs to train the GAN
+lambda_gp: 10
