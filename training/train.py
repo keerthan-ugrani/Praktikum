@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 from models.cnn_model import CNNClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
 
 def train_cnn(train_data, test_data, config, class_weights=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,9 +49,9 @@ def train_cnn(train_data, test_data, config, class_weights=None):
 
         print(f'Epoch {epoch + 1}/{config["num_epochs"]}, Loss: {running_loss / len(train_loader)}')
 
-    # Evaluate the model
-    accuracy = evaluate_cnn(model, test_loader, device)
-    return model, accuracy
+    # Evaluate the model and return the F1 score
+    f1 = evaluate_cnn(model, test_loader, device)
+    return model, f1
 
 def evaluate_cnn(model, test_loader, device):
     model.eval()
@@ -65,9 +65,10 @@ def evaluate_cnn(model, test_loader, device):
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
-    accuracy = accuracy_score(all_labels, all_preds)
-    print(f'CNN classification accuracy: {accuracy * 100:.2f}%')
-    return accuracy
+    # Calculate F1 score
+    f1 = f1_score(all_labels, all_preds, average='weighted')  # Use 'weighted' to account for class imbalance
+    print(f'CNN classification F1 Score: {f1 * 100:.2f}%')
+    return f1
 
 def create_dataset(data, num_classes):
     """Creates a TensorDataset for training and testing."""

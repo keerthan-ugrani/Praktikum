@@ -20,36 +20,6 @@ class ADA:
             images = tf.image.random_contrast(images, 0.8, 1.2)
         return images
 
-
-def visualize_images(images, epoch, n=3, save_dir='generated_images'):
-    """Visualize n generated images from a batch and optionally save them."""
-    os.makedirs(save_dir, exist_ok=True)
-    
-    plt.figure(figsize=(10, 5))
-    for i in range(n):
-        plt.subplot(1, n, i + 1)
-        plt.imshow(images[i, :, :, 0] * 127.5 + 127.5, cmap='gray')  # Rescale to [0, 255]
-        plt.axis('off')
-    
-    # Save the image grid
-    plt.suptitle(f"Generated Images at Epoch {epoch}")
-    plt.savefig(os.path.join(save_dir, f"generated_epoch_{epoch}.png"))
-    plt.show()
-
-
-def compute_gradient_penalty(discriminator, real_images, fake_images):
-    """Calculate the gradient penalty for WGAN-GP."""
-    batch_size = real_images.shape[0]
-    alpha = tf.random.uniform([batch_size, 1, 1, 1], 0.0, 1.0)
-    interpolated = alpha * real_images + (1 - alpha) * fake_images
-
-    with tf.GradientTape() as tape:
-        tape.watch(interpolated)
-        pred = discriminator(interpolated)
-    grads = tape.gradient(pred, interpolated)
-    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
-    gp = tf.reduce_mean((norm - 1.0) ** 2)
-    return gp
 def initialize_model_weights(model):
     """Initialize weights with normal distribution."""
     for layer in model.layers:

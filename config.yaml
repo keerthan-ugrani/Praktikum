@@ -14,4 +14,4 @@ test_size: 0.3
 n_support: 5 # Number of support samples per class
 n_query: 5 # Number of query samples per class
 gan_epochs: 1000 # Number of epochs to train the GAN
-lambda_gp: 10
+lambda_gp: 1

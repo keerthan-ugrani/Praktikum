@@ -11,7 +11,8 @@ from skimage.transform import resize
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
+    
+        
 class BaseDatasetManager:
     def __init__(self, data_dir: str, target_image_size: tuple = (28, 28)):
         self.data_dir = data_dir
@@ -20,18 +21,24 @@ class BaseDatasetManager:
         self.target_image_size = target_image_size
 
     def load_data(self):
-        """Loads and preprocesses DICOM files."""
+        """Loads and preprocesses DICOM files with the first parent directory as the class name."""
         for root, dirs, files in os.walk(self.data_dir):
             for file_name in files:
                 if file_name.endswith('.dcm'):
                     file_path = os.path.join(root, file_name)
-                    class_name = os.path.basename(root)
+                    # Take the first parent directory as the class name
+                    class_name = os.path.basename(os.path.dirname(file_path))
                     if class_name not in self.data:
                         self.data[class_name] = []
                     img = self._load_file(file_path)
                     resized_img = self._preprocess_image(img)
                     self.data[class_name].append(resized_img)
+    
+        # Generate metadata and print class names with image counts
         self.generate_metadata()
+        for class_name, count in self.metadata['class_counts'].items():
+            print(f"Class '{class_name}': {count} images")
+
 
     def generate_metadata(self):
         """Generates metadata such as class counts and class balance."""
@@ -45,6 +52,23 @@ class BaseDatasetManager:
         }
         self.metadata['num_classes'] = len(class_counts)
         self.metadata['image_size'] = self.target_image_size
+
+    def save_metadata_to_excel(self, output_file: str):
+        """Saves metadata to an Excel file."""
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        metadata_df = pd.DataFrame.from_dict(self.metadata['class_counts'], orient='index', columns=['Count'])
+        metadata_df['Class Balance'] = metadata_df['Count'] / self.metadata['total_samples']
+        metadata_df.to_excel(output_file, index_label='Class') 
+    
+    def _load_file(self, file_path):
+        """Load and return the pixel array from a DICOM file."""
+        ds = pydicom.dcmread(file_path)
+        img = ds.pixel_array.astype(np.float32)
+        
+        # Add an extra channel dimension if the image is 2D
+        if img.ndim == 2:
+            img = np.expand_dims(img, axis=-1)
+        return img
 
     def visualize_data_distribution(self):
         """Visualizes the class distribution."""
@@ -79,10 +103,6 @@ class BaseDatasetManager:
                 test_data[class_name] = test
 
         return train_data, test_data
-
-    def _load_file(self, file_path: str) -> np.ndarray:
-        ds = pydicom.dcmread(file_path)
-        return ds.pixel_array
 
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
         resized_img = resize(img, self.target_image_size, anti_aliasing=True)
