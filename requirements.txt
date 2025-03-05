@@ -1,0 +1,7 @@
+tensorflow
+opencv-python
+pandas
+pydicom
+scikit-learn
+numpy
+pyyaml

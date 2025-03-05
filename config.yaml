@@ -1,17 +1,4 @@
-# config.yaml
-
-data_dir: "../dataset/TCGA-KIRP"
-#model_type: "few_shot"
-target_image_size: [28, 28] # Resize all images to 28x28 for simplicity
-input_shape: [1, 28, 28] # [channels, height, width]
-embedding_dim: 64
-num_epochs: 20
+root_dir: "../dataset/TCGA-KIRP"
+target_size: [224, 224]
 batch_size: 32
-learning_rate: 0.001
-latent_dim: 100
-gan_type: "wgan-gp"
-test_size: 0.3
-n_support: 5 # Number of support samples per class
-n_query: 5 # Number of query samples per class
-gan_epochs: 1000 # Number of epochs to train the GAN
-lambda_gp: 1
+num_epochs: 5
