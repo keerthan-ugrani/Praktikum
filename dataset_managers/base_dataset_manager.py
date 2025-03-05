@@ -1,109 +1,41 @@
-# dataset_managers/base_dataset_manager.py
-
-# Other imports remain unchanged
 import os
-import numpy as np
-import pandas as pd
 import pydicom
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-from skimage.transform import resize
-import matplotlib.pyplot as plt
-import seaborn as sns
+import pandas as pd
+import cv2
+import numpy as np
+from pydicom.errors import InvalidDicomError
 
-    
-        
 class BaseDatasetManager:
-    def __init__(self, data_dir: str, target_image_size: tuple = (28, 28)):
-        self.data_dir = data_dir
-        self.data = {}
-        self.metadata = {}
-        self.target_image_size = target_image_size
+    def __init__(self, root_dir, target_size=(224, 224)):
+        self.root_dir = root_dir
+        self.target_size = target_size
+        self.metadata = pd.DataFrame()
 
     def load_data(self):
-        """Loads and preprocesses DICOM files with the first parent directory as the class name."""
-        for root, dirs, files in os.walk(self.data_dir):
-            for file_name in files:
-                if file_name.endswith('.dcm'):
-                    file_path = os.path.join(root, file_name)
-                    # Take the first parent directory as the class name
-                    class_name = os.path.basename(os.path.dirname(file_path))
-                    if class_name not in self.data:
-                        self.data[class_name] = []
-                    img = self._load_file(file_path)
-                    resized_img = self._preprocess_image(img)
-                    self.data[class_name].append(resized_img)
-    
-        # Generate metadata and print class names with image counts
-        self.generate_metadata()
-        for class_name, count in self.metadata['class_counts'].items():
-            print(f"Class '{class_name}': {count} images")
-
-
-    def generate_metadata(self):
-        """Generates metadata such as class counts and class balance."""
-        class_counts = {class_name: len(files) for class_name, files in self.data.items()}
-        self.metadata = {
-            'class_counts': class_counts,
-            'total_samples': sum(class_counts.values()),
-            'class_balance': {
-                class_name: count / sum(class_counts.values()) for class_name, count in class_counts.items()
-            }
-        }
-        self.metadata['num_classes'] = len(class_counts)
-        self.metadata['image_size'] = self.target_image_size
-
-    def save_metadata_to_excel(self, output_file: str):
-        """Saves metadata to an Excel file."""
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        metadata_df = pd.DataFrame.from_dict(self.metadata['class_counts'], orient='index', columns=['Count'])
-        metadata_df['Class Balance'] = metadata_df['Count'] / self.metadata['total_samples']
-        metadata_df.to_excel(output_file, index_label='Class') 
-    
-    def _load_file(self, file_path):
-        """Load and return the pixel array from a DICOM file."""
-        ds = pydicom.dcmread(file_path)
-        img = ds.pixel_array.astype(np.float32)
+        """Load and preprocess DICOM images, generating metadata."""
+        data = []
+        for class_name in os.listdir(self.root_dir):
+            class_path = os.path.join(self.root_dir, class_name)
+            if os.path.isdir(class_path):
+                for file_name in os.listdir(class_path):
+                    if file_name.endswith('.dcm'):
+                        file_path = os.path.join(class_path, file_name)
+                        try:
+                            dicom_data = pydicom.dcmread(file_path, force=True)
+                            image_array = dicom_data.pixel_array
+                            preprocessed_image = self.preprocess_image(image_array)
+                            data.append({
+                                'file_path': file_path,
+                                'class_name': class_name,
+                                'width': preprocessed_image.shape[1],
+                                'height': preprocessed_image.shape[0]
+                            })
+                        except (InvalidDicomError, AttributeError) as e:
+                            print(f"Warning: {file_path} is not a valid DICOM file. Skipping.")
         
-        # Add an extra channel dimension if the image is 2D
-        if img.ndim == 2:
-            img = np.expand_dims(img, axis=-1)
-        return img
+        self.metadata = pd.DataFrame(data)
 
-    def visualize_data_distribution(self):
-        """Visualizes the class distribution."""
-        class_counts = self.metadata.get('class_counts', {})
-        sns.barplot(x=list(class_counts.keys()), y=list(class_counts.values()))
-        plt.title('Class Distribution')
-        plt.xlabel('Class')
-        plt.ylabel('Number of Samples')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.show()
-
-    def save_metadata_to_excel(self, output_file: str):
-        """Saves metadata to an Excel file."""
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        metadata_df = pd.DataFrame.from_dict(self.metadata['class_counts'], orient='index', columns=['Count'])
-        metadata_df['Class Balance'] = metadata_df['Count'] / self.metadata['total_samples']
-        metadata_df.to_excel(output_file, index_label='Class')
-
-    def split_data(self, test_size=0.3):
-        train_data = {}
-        test_data = {}
-        for class_name, files in self.data.items():
-            if len(files) < 20:
-                # If there's only 1 sample, add it all to the training set and skip splitting
-                print(f"Class '{class_name}' has less than 20 samples. Skipping split.")
-                train_data[class_name] = files
-                test_data[class_name] = []  # Empty test data
-            else:
-                train, test = train_test_split(files, test_size=test_size, random_state=42)
-                train_data[class_name] = train
-                test_data[class_name] = test
-
-        return train_data, test_data
-
-    def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
-        resized_img = resize(img, self.target_image_size, anti_aliasing=True)
-        return resized_img
+    def preprocess_image(self, image):
+        resized_image = cv2.resize(image, self.target_size, interpolation=cv2.INTER_AREA)
+        normalized_image = resized_image / np.max(resized_image)
+        return normalized_image
