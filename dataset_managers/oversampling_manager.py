@@ -1,40 +1,33 @@
-# dataset_managers/oversampling_manager.py
+from .base_dataset_manager import BaseDatasetManager
+import os
+import shutil
+import random
 
-from dataset_managers.base_dataset_manager import BaseDatasetManager
-import numpy as np
-from keras.preprocessing.image import ImageDataGenerator
+class OversamplingManager(BaseDatasetManager):
+    def oversample(self):
+        """Oversample classes to balance the dataset by duplicating images."""
+        self.load_data()
+        class_counts = self.metadata['class_name'].value_counts()
+        max_count = class_counts.max()
 
-class DatasetManagerWithOversampling(BaseDatasetManager):
-    def __init__(self, data_dir, target_image_size=(28, 28)):
-        super().__init__(data_dir, target_image_size)
-        self.augmentor = ImageDataGenerator(rotation_range=20, width_shift_range=0.2, height_shift_range=0.2,
-                                            shear_range=0.2, zoom_range=0.2, horizontal_flip=True, fill_mode='nearest')
-
-    def oversample_data(self, target_class_size):
-        """
-        Oversamples minority classes and augments data using ImageDataGenerator.
-        Args:
-            target_class_size (int): The desired number of samples for each class.
-        """
-        for class_name, files in self.data.items():
-            augmented_data = []
-            if len(files) < target_class_size:
-                num_to_add = target_class_size - len(files)
-                for i in range(num_to_add):
-                    img = files[i % len(files)]
-                    
-                    # Ensure the image is 4D: (1, height, width, channels)
-                    if len(img.shape) == 2:  # For grayscale images (height, width)
-                        img = np.expand_dims(img, axis=-1)  # Add channel dimension
-                    img = np.expand_dims(img, axis=0)  # Add batch dimension
-                    
-                    # Generate augmented image
-                    augmented_img = next(self.augmentor.flow(img, batch_size=1))[0].astype(np.uint8)
-                    
-                    # Remove batch dimension before appending
-                    augmented_img = np.squeeze(augmented_img)
-                    augmented_data.append(augmented_img)
+        for class_name, count in class_counts.items():
+            class_folder = os.path.join(self.root_dir, class_name)
+            images_in_class = [f for f in os.listdir(class_folder) if f.endswith('.dcm') and not f.startswith("dup_")]
+            
+            # Duplicate images until the number of images matches the maximum class count
+            duplicates_created = 0
+            while len(images_in_class) + duplicates_created < max_count:
+                img_to_duplicate = random.choice(images_in_class)
+                src = os.path.join(class_folder, img_to_duplicate)
                 
-                self.data[class_name].extend(augmented_data)
+                # Generate a unique name for each duplicate to avoid conflicts
+                dst = os.path.join(class_folder, f"dup_{duplicates_created}_{img_to_duplicate}")
+                
+                # Check if source file exists to avoid errors
+                if os.path.isfile(src):
+                    shutil.copy(src, dst)
+                    duplicates_created += 1
+                else:
+                    print(f"Warning: Source file {src} does not exist.")
         
-        self.generate_metadata()  # Update metadata after oversampling
+        print("Oversampling complete.")

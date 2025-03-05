@@ -1,74 +1,70 @@
-# dataset_managers/gan_manager.py
-
-import tensorflow as tf
-import os
-from keras.layers import Dense, Reshape, Flatten, LeakyReLU, Conv2DTranspose, Conv2D, BatchNormalization
-from keras.models import Sequential
+from .base_dataset_manager import BaseDatasetManager
 import numpy as np
-from dataset_managers.base_dataset_manager import BaseDatasetManager
-from keras import backend as K
+import os
 import pydicom
+from models.dcgan import DCGAN
+from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
 
-class DatasetManagerWithGANs(BaseDatasetManager):
-    def __init__(self, data_dir, target_image_size, latent_dim=100, gan_type="wgan-gp"):
-        super().__init__(data_dir)
-        self.target_image_size = target_image_size
-        self.latent_dim = latent_dim
-        self.gan_type = gan_type
-        self.data = {}  # Dictionary to hold image data by class
+class GANManager(BaseDatasetManager):
+    def __init__(self, root_dir, gan_generator_model):
+        super().__init__(root_dir)
+        self.gan_generator = gan_generator_model
 
-        # Build GAN components
-        self.generator = self.build_generator()
-        self.discriminator = self.build_discriminator()
+    def augment_with_gan(self, num_samples_per_class=100):
+        """Uses the DCGAN model to generate synthetic images and augment the dataset."""
+        self.load_data()
+        class_counts = self.metadata['class_name'].value_counts()
+        max_count = class_counts.max()
 
-    def _load_file(self, file_path):
-        """Load and resize a DICOM file to the target image size."""
-        ds = pydicom.dcmread(file_path)
-        img = ds.pixel_array.astype(np.float32)
+        for class_name, count in class_counts.items():
+            class_folder = os.path.join(self.root_dir, class_name)
         
-        # Ensure the image has 3 dimensions (height, width, channels)
-        if img.ndim == 2:
-            img = np.expand_dims(img, axis=-1)  # Add channel dimension to make it (height, width, 1)
+            # Remove old synthetic images
+            for file_name in os.listdir(class_folder):
+                if file_name.startswith("synthetic_") and file_name.endswith(".dcm"):
+                    os.remove(os.path.join(class_folder, file_name))
         
-        # Resize to target size
-        img = tf.image.resize(img, self.target_image_size).numpy()  # Resize to (28, 28, 1)
-        return img
+            # Calculate the number of synthetic images needed
+            num_samples_needed = max_count - count
 
-    def load_data(self):
-        """Load images from the directory, resizing to target shape."""
-        for root, dirs, files in os.walk(self.data_dir):
-            class_name = os.path.basename(root)
-            if class_name not in self.data:
-                self.data[class_name] = []
-            for file_name in files:
-                if file_name.endswith('.dcm'):
-                    file_path = os.path.join(root, file_name)
-                    img = self._load_file(file_path)
-                    self.data[class_name].append(img)
+            # Skip generating images if no additional samples are needed
+            if num_samples_needed <= 0:
+                print(f"No synthetic images needed for class '{class_name}'. Skipping...")
+                continue
 
-    def build_generator(self):
-        model = Sequential([
-            Dense(128 * (self.target_image_size[0] // 4) * (self.target_image_size[1] // 4), activation="relu", input_dim=self.latent_dim),
-            Reshape((self.target_image_size[0] // 4, self.target_image_size[1] // 4, 128)),
-            Conv2DTranspose(128, kernel_size=4, strides=2, padding='same'),
-            BatchNormalization(),
-            LeakyReLU(alpha=0.2),
-            Conv2DTranspose(64, kernel_size=4, strides=2, padding='same'),
-            BatchNormalization(),
-            LeakyReLU(alpha=0.2),
-            Conv2D(1, kernel_size=7, activation='tanh', padding='same')
-        ])
-        return model
+            # Generate synthetic images
+            print(f"Generating {num_samples_needed} synthetic images for class '{class_name}'...")
+            synthetic_images = self.gan_generator.generate_images(num_samples_needed)
 
-    def build_discriminator(self):
-        model = Sequential([
-            Conv2D(64, kernel_size=3, strides=2, input_shape=(self.target_image_size[0], self.target_image_size[1], 1), padding='same'),
-            LeakyReLU(alpha=0.2),
-            Flatten(),
-            Dense(1)
-        ])
-        return model
+            # Save each generated image as a DICOM file
+            for i, img in enumerate(synthetic_images):
+                img = (img * 127.5 + 127.5).astype(np.uint8)
+                save_path = os.path.join(class_folder, f"synthetic_{i}.dcm")
+                self.save_image_as_dicom(img, save_path)
 
-    def get_minority_class(self):
-        """Returns the class with the least number of images."""
-        return min(self.data, key=lambda k: len(self.data[k]))
+
+    def save_image_as_dicom(self, image_array, file_path):
+        file_meta = pydicom.Dataset()
+        file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        file_meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
+        file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+        file_meta.ImplementationClassUID = pydicom.uid.generate_uid()
+
+        ds = pydicom.Dataset()
+        ds.file_meta = file_meta
+        ds.is_little_endian = True
+        ds.is_implicit_VR = False
+        ds.SOPClassUID = SecondaryCaptureImageStorage
+        ds.Rows, ds.Columns = image_array.shape[:2]
+        ds.SamplesPerPixel = 1
+        ds.PhotometricInterpretation = "MONOCHROME2"
+        ds.BitsAllocated = 8
+        ds.BitsStored = 8
+        ds.HighBit = 7
+        ds.PixelRepresentation = 0
+        ds.PixelData = image_array.tobytes()
+
+        with open(file_path, 'wb') as f:
+            f.write(b'\x00' * 128)
+            f.write(b'DICM')
+            pydicom.filewriter.write_file(f, ds)

@@ -1,13 +1,20 @@
-# dataset_managers/class_weight_manager.py
-
-from dataset_managers.base_dataset_manager import BaseDatasetManager
-import numpy as np
+from .base_dataset_manager import BaseDatasetManager
 from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 
-
-class DatasetManagerWithClassWeighting(BaseDatasetManager):
-    def compute_class_weights(self):
-        class_counts = self.metadata['class_counts']
-        labels = np.concatenate([[class_name] * count for class_name, count in class_counts.items()])
+class ClassWeightManager(BaseDatasetManager):
+    def calculate_class_weights(self):
+        self.load_data()
+        
+        # Map class names to integer labels
+        class_names = self.metadata['class_name'].unique()
+        class_name_to_label = {name: idx for idx, name in enumerate(class_names)}
+        
+        # Replace class names with integer labels in metadata
+        labels = self.metadata['class_name'].map(class_name_to_label).values
+        
+        # Compute class weights using integer labels
         class_weights = compute_class_weight('balanced', classes=np.unique(labels), y=labels)
+        
+        # Return class weights as a dictionary mapping from integer labels
         return dict(enumerate(class_weights))
